@@ -26,9 +26,9 @@ Human review before sending
             draft         draft
 ```
 
-Run `python3 demo.py` to see the sequence offline, or `python3 demo.py --live-claude` with Claude credentials configured. The first reading establishes a baseline. Skipped readings still count as crossings: 31% to 29% triggers the 30% update using the actual 29% reading. A jump across both thresholds produces one update at the lower threshold and marks both as handled. Milestones persist across restarts and reset for a new dispatch.
+Run `python3 demo.py` to see the sequence offline, or `python3 demo.py --live-claude` with Claude credentials configured. The first reading establishes a baseline. Skipped readings still count as crossings: 31% to 29% triggers the 30% update using the actual 29% reading. A jump across both thresholds produces one update at the lower threshold and marks both as handled.
 
-Outages, customer requests for a human, and readings below the expected 20% floor remain internal escalations. Drafts stay in a local review queue; customer delivery and CRM integration are not connected yet.
+Drafts stay in a local review queue; customer delivery and CRM integration are not connected yet.
 
 The prototype also includes Jev for assessing customer replies. Next, I want to expand its role in identifying cancellation intent, routing concerns to the right team, and flagging ambiguous replies for human review.
 
