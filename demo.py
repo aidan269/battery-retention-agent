@@ -1,7 +1,8 @@
 """Offline demonstration; pass --live-claude to request an actual draft."""
 import argparse
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from dataclasses import replace
 from uuid import uuid4
 from models import BatteryEvent
 from workflow import RetentionWorkflow
@@ -20,15 +21,19 @@ def main():
     event = BatteryEvent(
         event_id=f"reading-{run_id}", dispatch_id=f"dispatch-{run_id}",
         customer_id="demo-customer", observed_at=datetime.now(timezone.utc),
-        phase="updated", battery_percent=19, reserve_percent=20,
+        phase="updated", battery_percent=35, reserve_percent=20,
         dispatch_confirmed=True, grid_status="available",
         verified_reason="Battery export during elevated grid demand (simulated event).",
     )
     with RetentionWorkflow(args.db, writer=draft_message if args.live_claude else fallback_message,
                            writer_source="claude" if args.live_claude else "offline_template") as workflow:
-        for label in ("First event", "Repeated event"):
-            print(label)
-            print(json.dumps(workflow.handle(event), indent=2))
+        for index, percent in enumerate((35, 31, 30, 28, 25, 22, 20)):
+            reading = replace(event, event_id=f"reading-{run_id}-{index}",
+                              battery_percent=percent,
+                              observed_at=event.observed_at - timedelta(seconds=6-index))
+            print(f"Battery: {percent}%")
+            print(json.dumps(workflow.handle(reading), indent=2))
+        print("Expected: two drafts (30% and 25%), no new alert at 20%.")
         print("Local escalation queue")
         print(json.dumps(workflow.list_records("escalations"), indent=2))
 

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from jev import assess_customer_reply, reply_reasons
 from models import BatteryEvent
-from policy import decide, milestone, queue_for
+from policy import BATTERY_FLOOR, crossed_thresholds, decide, queue_for
 from writer import draft_message, fallback_message
 
 SCHEMA = """
@@ -24,6 +24,11 @@ CREATE TABLE IF NOT EXISTS notifications (
     source TEXT NOT NULL, error_type TEXT,
     status TEXT NOT NULL DEFAULT 'pending_review',
     UNIQUE(customer_id, dispatch_id, milestone)
+);
+CREATE TABLE IF NOT EXISTS threshold_milestones (
+    customer_id TEXT NOT NULL, dispatch_id TEXT NOT NULL, threshold INTEGER NOT NULL,
+    notification_id INTEGER NOT NULL REFERENCES notifications(id),
+    PRIMARY KEY(customer_id, dispatch_id, threshold)
 );
 CREATE TABLE IF NOT EXISTS replies (
     reply_id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, dispatch_id TEXT NOT NULL,
@@ -78,41 +83,56 @@ class RetentionWorkflow:
                 self._escalate(event.customer_id, incident, reason, event.event_id)
 
         result = {"event_id": event.event_id, "escalation_reasons": list(decision.reasons)}
-        if not decision.notify:
-            return {**result, "status": "no_notification"}
-
-        # A local single-worker prototype: serialize generation so concurrent
-        # callers cannot create duplicate drafts. Rollback makes crash retry safe.
+        # Serialize crossing detection and draft creation. The event and operational
+        # handoffs above survive a model failure or interruption.
         with self.db:
             self.db.execute("BEGIN IMMEDIATE")
-            key = (event.customer_id, event.dispatch_id, milestone(event))
             existing = self.db.execute(
-                "SELECT * FROM notifications WHERE customer_id=? AND dispatch_id=? AND milestone=?", key
+                "SELECT * FROM notifications WHERE event_id=?", (event.event_id,)
             ).fetchone()
             if existing:
                 return {**result, "status": "already_queued", "notification": dict(existing)}
-            # Do not send a delayed start/update after newer telemetry or an end.
+            if "stale_or_future_telemetry" in decision.reasons:
+                return {**result, "status": "no_notification"}
             history = self.db.execute(
                 "SELECT payload FROM events WHERE customer_id=? AND dispatch_id=? AND event_id<>?",
                 (event.customer_id, event.dispatch_id, event.event_id),
             ).fetchall()
+            prior = []
             for row in history:
                 previous = BatteryEvent.from_dict(json.loads(row["payload"]))
                 if (previous.observed_at - now).total_seconds() > 60:
                     continue
-                if (previous.observed_at > event.observed_at or
+                if (previous.observed_at >= event.observed_at or
                     previous.phase == "ended" and event.phase != "ended"):
                     return {**result, "status": "superseded"}
+                if previous.dispatch_confirmed and previous.battery_percent >= BATTERY_FLOOR:
+                    prior.append(previous)
+            previous = max(prior, key=lambda e: e.observed_at) if prior else None
+            previous_percent = previous.battery_percent if previous else None
+            decision = decide(event, previous_percent=previous_percent, now=now)
+            if not decision.notify:
+                return {**result, "status": "no_notification"}
+            crossed = crossed_thresholds(previous_percent, event.battery_percent)
+            handled = {row[0] for row in self.db.execute(
+                "SELECT threshold FROM threshold_milestones WHERE customer_id=? AND dispatch_id=?",
+                (event.customer_id, event.dispatch_id),
+            )}
+            pending = set(crossed) - handled
+            if not pending:
+                return {**result, "status": "already_queued"}
+            threshold = min(pending)
+            key = (event.customer_id, event.dispatch_id, f"battery_{threshold}")
             error_type = None
             source = self.writer_source
             try:
                 # A local queue entry is not evidence that external support was contacted.
-                message = self.writer(event, ticket_created=False)
+                message = self.writer(event, ticket_created=False, notification_threshold_percent=threshold)
                 if not isinstance(message, str) or not message.strip() or len(message.split()) > 80:
                     raise ValueError("Invalid draft")
             except Exception as error:
                 error_type = type(error).__name__
-                message = fallback_message(event)
+                message = fallback_message(event, notification_threshold_percent=threshold)
                 source = "fallback"
                 self._escalate(event.customer_id, incident, "generation_failed", event.event_id)
                 result["escalation_reasons"].append("generation_failed")
@@ -121,6 +141,10 @@ class RetentionWorkflow:
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (*key, event.event_id, message, source, error_type),
             )
+            # One draft can cover both thresholds when readings skip 30 and 25.
+            for crossed_threshold in pending:
+                self.db.execute("INSERT INTO threshold_milestones VALUES (?, ?, ?, ?)",
+                                (event.customer_id, event.dispatch_id, crossed_threshold, cursor.lastrowid))
             notification = dict(self.db.execute("SELECT * FROM notifications WHERE id=?", (cursor.lastrowid,)).fetchone())
         return {**result, "status": "queued_for_review", "notification": notification}
 

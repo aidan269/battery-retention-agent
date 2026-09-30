@@ -17,11 +17,13 @@ class WorkflowTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.path = str(Path(self.temp.name) / 'test.sqlite3')
         self.now = datetime.now(timezone.utc)
-        self.event = BatteryEvent('e1', 'd1', 'c1', self.now, 'started', 70, 20,
+        self.event = BatteryEvent('e1', 'd1', 'c1', self.now, 'updated', 30, 20,
                                   True, 'available', 'Confirmed grid demand event')
         self.writer = Mock(return_value='Your confirmed battery dispatch has started.')
         self.assessor = Mock(return_value={'human_requested': 0.01, 'cancellation': 0.01, 'outage': 0.01})
         self.w = RetentionWorkflow(self.path, writer=self.writer, assessor=self.assessor)
+        self.w.handle(replace(self.event, event_id='baseline', battery_percent=35,
+                              observed_at=self.now - timedelta(seconds=10)))
 
     def tearDown(self):
         self.w.close()
@@ -36,29 +38,65 @@ class WorkflowTests(unittest.TestCase):
         self.writer.assert_called_once()
 
     def test_new_readings_same_milestone(self):
-        self.w.handle(replace(self.event, phase='updated', battery_percent=24))
-        result = self.w.handle(replace(self.event, event_id='e2', phase='updated', battery_percent=23))
+        self.w.handle(self.event)
+        result = self.w.handle(replace(self.event, event_id='e2', battery_percent=29,
+                                      observed_at=self.now + timedelta(seconds=1)))
+        self.assertEqual(result['status'], 'no_notification')
+        self.writer.assert_called_once()
+
+    def test_below_floor_is_internal_only(self):
+        result = self.w.handle(replace(self.event, battery_percent=19))
+        self.assertEqual(result['status'], 'no_notification')
+        self.assertIn('below_battery_floor', result['escalation_reasons'])
+        self.writer.assert_not_called()
+
+    def test_outage_alone_does_not_notify(self):
+        result = self.w.handle(replace(self.event, battery_percent=34, grid_status='outage'))
+        self.assertEqual(result['status'], 'no_notification')
+        self.assertIn('grid_outage', result['escalation_reasons'])
+
+    def test_end_does_not_notify(self):
+        result = self.w.handle(replace(self.event, phase='ended'))
+        self.assertEqual(result['status'], 'no_notification')
+
+    def test_full_sequence(self):
+        statuses = []
+        for i, percent in enumerate((35, 31, 30, 28, 25, 22, 20)):
+            result = self.w.handle(replace(self.event, event_id=f'seq-{i}', battery_percent=percent,
+                                          observed_at=self.now + timedelta(seconds=i)))
+            statuses.append(result['status'])
+        self.assertEqual([i for i, s in enumerate(statuses) if s == 'queued_for_review'], [2, 4])
+        self.assertEqual([n['milestone'] for n in self.w.list_records('notifications')],
+                         ['battery_30', 'battery_25'])
+        self.assertEqual(self.w.list_records('escalations'), [])
+
+    def test_skipped_thresholds_are_consumed_together(self):
+        result = self.w.handle(replace(self.event, battery_percent=24))
+        self.assertEqual(result['notification']['milestone'], 'battery_25')
+        self.w.handle(replace(self.event, event_id='recharge', battery_percent=35,
+                              observed_at=self.now + timedelta(seconds=1)))
+        result = self.w.handle(replace(self.event, event_id='drop', battery_percent=29,
+                                      observed_at=self.now + timedelta(seconds=2)))
         self.assertEqual(result['status'], 'already_queued')
         self.writer.assert_called_once()
 
-    def test_breach_gets_new_alert(self):
-        self.w.handle(replace(self.event, phase='updated', battery_percent=24))
-        result = self.w.handle(replace(self.event, event_id='e2', phase='updated', battery_percent=19))
+    def test_new_dispatch_has_new_milestones(self):
+        self.w.handle(self.event)
+        self.w.handle(replace(self.event, event_id='new-baseline', dispatch_id='d2', battery_percent=35))
+        result = self.w.handle(replace(self.event, event_id='new-crossing', dispatch_id='d2',
+                                      observed_at=self.now + timedelta(seconds=1)))
         self.assertEqual(result['status'], 'queued_for_review')
-        ticket = self.w.list_records('escalations')[0]
-        self.assertEqual(ticket['reason'], 'below_configured_reserve')
-        self.assertEqual(ticket['queue'], 'operations')
+        self.assertEqual(self.writer.call_count, 2)
 
-    def test_outage_above_reserve(self):
-        result = self.w.handle(replace(self.event, phase='updated', grid_status='outage'))
-        self.assertEqual(result['notification']['milestone'], 'outage')
-        self.assertIn('grid_outage', result['escalation_reasons'])
+    def test_first_reading_is_baseline(self):
+        result = self.w.handle(replace(self.event, dispatch_id='new', battery_percent=24))
+        self.assertEqual(result['status'], 'no_notification')
+        self.writer.assert_not_called()
 
-    def test_end_notification_after_reserve_breach(self):
-        self.w.handle(replace(self.event, phase='updated', battery_percent=19))
-        result = self.w.handle(replace(self.event, event_id='end', phase='ended', battery_percent=19))
-        self.assertEqual(result['notification']['milestone'], 'ended')
-        self.assertEqual(result['status'], 'queued_for_review')
+    def test_actual_reading_and_threshold_passed_to_writer(self):
+        self.w.handle(replace(self.event, battery_percent=29))
+        self.assertEqual(self.writer.call_args.args[0].battery_percent, 29)
+        self.assertEqual(self.writer.call_args.kwargs['notification_threshold_percent'], 30)
 
     def test_escalation_committed_before_claude_failure(self):
         def fail(event, **kwargs):
@@ -66,7 +104,7 @@ class WorkflowTests(unittest.TestCase):
                 self.assertTrue(reader.list_records('escalations'))
             raise TimeoutError('secret must not be stored')
         self.w.writer = fail
-        result = self.w.handle(replace(self.event, battery_percent=19))
+        result = self.w.handle(replace(self.event, customer_requested_human=True))
         self.assertEqual(result['notification']['source'], 'fallback')
         self.assertEqual(result['notification']['error_type'], 'TimeoutError')
         self.assertNotIn('secret', json.dumps(self.w.list_records('notifications')))
@@ -102,7 +140,7 @@ class WorkflowTests(unittest.TestCase):
     def test_late_start_suppressed(self):
         self.w.handle(replace(self.event, phase='ended'))
         result = self.w.handle(replace(self.event, event_id='late',
-                                       observed_at=self.now - timedelta(seconds=30)))
+                                       observed_at=self.now - timedelta(seconds=1)))
         self.assertEqual(result['status'], 'superseded')
 
     def test_review_state_transitions(self):
