@@ -22,6 +22,8 @@ Claude drafts a customer update
 Human review before sending
 ```
 
-Run `python3 demo.py` to see the sequence offline, or `python3 demo.py --live-claude` with Claude credentials configured. The first reading establishes a baseline. Skipped readings still count as crossings: 31% to 29% triggers the 30% update using the actual 29% reading. Drafts stay in a local review queue. Jev assesses customer replies, and the bot can write escalations to HubSpot as follow-up tasks linked to the customer contact. To write an escalation to HubSpot, set `HUBSPOT_ACCESS_TOKEN` in `.env` to a HubSpot app access token authorized to create tasks. 
+Run `python3 demo.py` to see the sequence offline, or `python3 demo.py --live-claude` with Claude credentials configured. The first reading establishes a baseline. Skipped readings still count as crossings: 31% to 29% triggers the 30% update using the actual 29% reading. 
+
+Drafts stay in a local review queue. Jev assesses customer replies, and the bot can write escalations to HubSpot as follow-up tasks linked to the customer contact. To write an escalation to HubSpot, set `HUBSPOT_ACCESS_TOKEN` in `.env` to a HubSpot app access token authorized to create tasks. 
 
 When Jev flags the reply, this creates one **Battery customer escalation** task associated with that contact, containing the reply, reasons, and assessment. The output shows `hubspot.status: created` and the task ID.
