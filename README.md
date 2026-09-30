@@ -1,8 +1,8 @@
-# Battery Retention Bot v1
+# Battery Retention Bot v1 🔋
 
-One recurring concern I saw in Facebook discussions about [Base Power](https://www.basepowercompany.com/) was a lack of transparency around battery drainage during peak grid demand. I built this customer retention bot to help explain these events, flag customer concerns, and keep an engineer in the loop.
+One recurring concern I saw in discussions about [Base Power](https://www.basepowercompany.com/) was a lack of transparency around battery drainage during peak grid demand. I built this customer retention bot to help explain these events, flag customer concerns, and keep an engineer in the loop.
 
-The bot prepares one customer update when charge crosses 30% and another at 25%, per dispatch. The configured operating floor for this demo is 20%; there is no 20% notification milestone.
+The bot prepares one customer update when charge crosses 30% and another at 25%, per dispatch.
 
 ```text
 Battery reading arrives
