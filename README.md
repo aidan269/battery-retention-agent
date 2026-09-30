@@ -20,6 +20,20 @@ Claude drafts a customer update
           |
           v
 Human review before sending
+
+Customer reply entered via CLI
+          |
+          v
+Jev assesses reply for escalation
+          |
+          +---- No escalation ----> Save assessment
+          |
+          v
+Escalation flagged
+          |
+          v
+Create HubSpot follow-up task
+(when HubSpot contact ID is supplied)
 ```
 
 Run `python3 demo.py` to see the sequence offline, or `python3 demo.py --live-claude` with Claude credentials. The first reading establishes a baseline. Skipped readings still count as crossings: 31% to 29% triggers the 30% update using the actual 29% reading. 
