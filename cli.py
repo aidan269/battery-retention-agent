@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path
+from crm import write_escalation
 from models import BatteryEvent
 from workflow import RetentionWorkflow
 from writer import draft_message, fallback_message
@@ -26,8 +27,10 @@ def main():
     reply.add_argument("text")
     reply.add_argument("--requested-human", action="store_true")
     reply.add_argument("--live-jev", action="store_true")
+    reply.add_argument("--hubspot-contact-id", help="Create a HubSpot task if this reply is escalated")
     args = parser.parse_args()
-    if getattr(args, "live_claude", False) or getattr(args, "live_jev", False):
+    if (getattr(args, "live_claude", False) or getattr(args, "live_jev", False)
+            or getattr(args, "hubspot_contact_id", None)):
         from dotenv import load_dotenv
         load_dotenv()
     options = {}
@@ -48,6 +51,8 @@ def main():
             else:
                 output = workflow.handle_reply(args.reply_id, args.customer_id, args.dispatch_id,
                                                args.text, requested_human=args.requested_human)
+                if args.hubspot_contact_id:
+                    output["hubspot"] = write_escalation(workflow.db, output, args.hubspot_contact_id)
         print(json.dumps(output, indent=2))
     except (ValueError, KeyError, TypeError, OSError) as error:
         parser.exit(1, f"{type(error).__name__}: {error}\n")
