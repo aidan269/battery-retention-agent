@@ -1,6 +1,6 @@
 # Battery Retention Bot v1 🔋
 
-**Stack: Claude, Jev, Python, HubSpot**
+**Stack/ Systems Involved: Claude, Jev, Python, HubSpot**
 
 One recurring concern I saw in discussions about [Base Power](https://www.basepowercompany.com/) was a lack of transparency around battery drainage during peak grid demand. I built this customer retention bot to help explain these events, flag customer concerns, and keep an engineer in the loop.
 
