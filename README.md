@@ -10,17 +10,12 @@ The bot prepares one customer update when charge crosses 30% and another at 25%,
 Battery reading arrives
           |
           v
-Confirmed dispatch + fresh telemetry?
-          |
-          v
 Crossed 30% or 25% since the previous reading?
           |
           v
 Claude drafts a customer update
           |
           v
-Human review before sending
-
 Customer reply entered via CLI
           |
           v
@@ -33,7 +28,6 @@ Escalation flagged
           |
           v
 Create HubSpot follow-up task
-(when HubSpot contact ID is supplied)
 ```
 
 Run `python3 demo.py` to see the sequence offline, or `python3 demo.py --live-claude` with Claude credentials. The first reading establishes a baseline. Skipped readings still count as crossings: 31% to 29% triggers the 30% update using the actual 29% reading. 
