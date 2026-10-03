@@ -2,7 +2,7 @@
 
 **Stack/ Systems Involved: Claude, [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev), Python, HubSpot**
 
-One concern I saw in discussions about [Base Power](https://www.basepowercompany.com/) was a lack of transparency around battery drainage during peak grid demand. I built this customer retention bot to help explain these events, flag customer concerns, and keep an engineer in the loop.
+One customer setback I saw in discussions was a lack of transparency around battery drainage during peak grid demand. I built this customer retention bot to help explain these events, flag customer concerns, and keep an engineer in the loop.
 
 The bot prepares one customer update when charge crosses 30% and another at 25%, per dispatch.
 
