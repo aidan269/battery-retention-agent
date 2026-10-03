@@ -34,4 +34,4 @@ Run `python3 demo.py` to see the sequence offline, or `python3 demo.py --live-cl
 
 Drafts stay in a local review queue. Jev assesses customer replies, and the bot can write escalations to HubSpot as follow-up tasks linked to the customer contact. To write an escalation to HubSpot, set `HUBSPOT_ACCESS_TOKEN` in `.env`. 
 
-When Jev flags the reply, this creates one **Battery customer escalation** task associated with that contact, containing the reply, reasons, and assessment. The output shows `hubspot.status: created` and the task ID.
+When Jev flags the reply, this creates one **Battery customer escalation** task associated with that contact, containing the reply, reasons, and assessment.
