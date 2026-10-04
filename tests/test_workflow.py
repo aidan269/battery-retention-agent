@@ -20,7 +20,7 @@ class WorkflowTests(unittest.TestCase):
         self.event = BatteryEvent('e1', 'd1', 'c1', self.now, 'updated', 30, 20,
                                   True, 'available', 'Confirmed grid demand event')
         self.writer = Mock(return_value='Your confirmed battery dispatch has started.')
-        self.assessor = Mock(return_value={'human_requested': 0.01, 'cancellation': 0.01, 'outage': 0.01})
+        self.assessor = Mock(return_value={'human_requested': 0.01, 'cancellation': 0.01, 'unresolved_problem': 0.01})
         self.w = RetentionWorkflow(self.path, writer=self.writer, assessor=self.assessor)
         self.w.handle(replace(self.event, event_id='baseline', battery_percent=35,
                               observed_at=self.now - timedelta(seconds=10)))
@@ -152,7 +152,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_reply_escalations_and_dedup(self):
         self.w.handle(self.event)
-        self.assessor.return_value = {'human_requested': 0.9, 'cancellation': 0.95, 'outage': 0.5}
+        self.assessor.return_value = {'human_requested': 0.9, 'cancellation': 0.95, 'unresolved_problem': 0.5}
         first = self.w.handle_reply('r1', 'c1', 'd1', 'I want to cancel')
         second = self.w.handle_reply('r1', 'c1', 'd1', 'I want to cancel')
         self.assertEqual(first, second)
@@ -170,7 +170,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_malformed_jev_result_routes_to_review(self):
         self.w.handle(self.event)
-        self.assessor.return_value = {'outage': float('nan')}
+        self.assessor.return_value = {'unresolved_problem': float('nan')}
         self.w.handle_reply('r1', 'c1', 'd1', 'help')
         self.assertEqual(self.w.list_records('escalations')[0]['reason'], 'reply_assessment_failed')
 
@@ -192,7 +192,7 @@ class WorkflowTests(unittest.TestCase):
     @patch.dict('os.environ', {'TYPESAFE_API_KEY': 'test-key'})
     @patch('jev.urlopen')
     def test_jev_http_contract(self, urlopen):
-        scores = {'human_requested': 0.9, 'cancellation': 0.1, 'outage': 0.05}
+        scores = {'human_requested': 0.9, 'cancellation': 0.1, 'unresolved_problem': 0.05}
         body = {'answers': {k: {'type': 'noul', 'noul': v} for k, v in scores.items()}}
         urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(body).encode()
         self.assertEqual(assess_customer_reply('help', {}), scores)

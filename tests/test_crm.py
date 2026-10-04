@@ -12,7 +12,7 @@ class CRMTests(unittest.TestCase):
         self.addCleanup(self.db.close)
         self.reply = dict(reply_id='r1', customer_id='c1', dispatch_id='d1',
                           text='Please cancel <script>', requested_human=False, error_type=None,
-                          assessment=json.dumps(dict(human_requested=0.1, cancellation=0.95, outage=0.1)))
+                          assessment=json.dumps(dict(human_requested=0.1, cancellation=0.95, unresolved_problem=0.1)))
 
     @patch.dict('os.environ', {'HUBSPOT_ACCESS_TOKEN': 'test-token'})
     @patch('crm.urlopen')
@@ -31,7 +31,7 @@ class CRMTests(unittest.TestCase):
 
     @patch('crm.urlopen')
     def test_no_escalation_no_write(self, post):
-        self.reply['assessment'] = json.dumps(dict(human_requested=0.1, cancellation=0.1, outage=0.1))
+        self.reply['assessment'] = json.dumps(dict(human_requested=0.1, cancellation=0.1, unresolved_problem=0.1))
         self.assertEqual(write_escalation(self.db, self.reply, '42')['status'], 'not_escalated')
         post.assert_not_called()
 
